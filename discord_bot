@@ -1,0 +1,136 @@
+import requests
+import json
+import time
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import discord
+import random
+plt.rcdefaults()
+color = 'darkgray'
+plt.rc('font', weight='bold')
+plt.rcParams['text.color']=color
+plt.rcParams['axes.labelcolor']=color
+plt.rcParams['xtick.color']=color
+plt.rcParams['ytick.color']=color
+plt.rc('axes',edgecolor=color)
+from keep_alive import keep_alive
+
+client = discord.Client()
+
+
+
+def get_buckets(zkill_id):
+    # dictionary for how many pilots involved in killmails
+    page_num = 1
+    pilots_involved = {
+        "solo": 0,
+        "five": 0,
+        "ten": 0,
+        "fifteen": 0,
+        "twenty": 0,
+        "thirty": 0,
+        "forty": 0,
+        "fifty": 0,
+        "blob": 0,
+    }
+    char_id = zkill_id
+    char_id = char_id.strip()  
+    #input("Enter your character id from zkill: ")
+    # set up initial webpage hit
+    try:
+        link = "https://zkillboard.com/api/kills/characterID/" + str(char_id) + "/no-attackers/page/" + \
+            str(page_num) + "/"
+        response = requests.session()
+        response.headers.update(
+            {'Accept-Encoding': 'gzip', "User-Agent": "propeine bucket bot"})
+        response = requests.get(link)
+
+        # zkill returns [] if the page is empty
+        while response.text.find("[]") == -1 and page_num < 21:
+            #print("Reading page: " + str(page_num))
+            cjson = json.loads(response.text)
+            for i in range(len(cjson)):
+                pilots = int(cjson[i]['zkb']['involved'])
+                if int(pilots) == 1:
+                    pilots_involved["solo"] += 1
+                elif int(pilots) < 5:
+                    pilots_involved["five"] += 1
+                elif int(pilots) < 10:
+                    pilots_involved["ten"] += 1
+                elif int(pilots) < 15:
+                    pilots_involved["fifteen"] += 1
+                elif int(pilots) < 20:
+                    pilots_involved["twenty"] += 1
+                elif int(pilots) < 30:
+                    pilots_involved["thirty"] += 1
+                elif int(pilots) < 40:
+                    pilots_involved["forty"] += 1
+                elif int(pilots) < 50:
+                    pilots_involved["fifty"] += 1
+                elif int(pilots) >= 50:
+                    pilots_involved["blob"] += 1
+            page_num += 1
+            time.sleep(1.25)
+            link = "https://zkillboard.com/api/kills/characterID/" + str(char_id) + "/no-attackers/page/" + \
+                str(page_num) + "/"
+            response = requests.get(link)
+        return pilots_involved
+    except:
+        return 'error'    #if literally anything goes wrong
+
+#setup initial login
+phrases = ['You are probably a filthy blobber, we\'ll see.','Small gang best gang.','Backpacks dont\'t count.','Strix Ryden #2!']
+smallgang_phrases=['Did you wear your mouse out clicking in space?','What\'s an anchor?','We don\'t need no stinking FC.','Kitey nano bitch.','How many backpacks do you lose?','Wormholer BTW']
+blobber_phrases=['FC when do I hit F1?','FC can I bring my drake?','Who is the anchor?','How\'s that blue donut treating you?','You must be part of some nullsec alliance.','I\'ve never heard of a nanofiber.']
+@client.event
+async def on_ready():
+    print('We have logged in as {0.user}'.format(client))
+
+#if !killbucket used then get the zkill id
+@client.event
+async def on_message(message):
+    if message.author == client.user:
+        return
+    if message.content.startswith('!killbucket'):
+      if message.content == '!killbucket help':
+        await message.channel.send('Usage:Place zkillID (from URL on zkill.com) after !killbucket \n Calculates kills based on pilots involved for buckets for the most recent 4000  kills')
+        print('someone asked for help')
+      else:
+        print('someone asked for kills for ' + message.content[12:])
+        await message.channel.send(random.choice(phrases)+'\n This might take a minute...')
+        kill_id = message.content[12:]
+        kills = get_buckets(message.content[12:]) #assumes !killbucket_zkillid
+        if kills == 'error':
+            await message.channel.send('Something went wrong, probably invalid zkill ID')
+            print('someone screwed up')
+        else:
+            #message_text = ''
+            small_gang = kills['solo']+kills['five']+kills['ten']+kills['fifteen']+kills['twenty']
+            blob_gang = kills['thirty']+kills['forty']+kills['fifty']+kills['blob']
+            if small_gang < blob_gang:
+              reaction_text = random.choice(blobber_phrases) + ' **' + kill_id +'-You\'re a blobber**'
+            else:
+              reaction_text = random.choice(smallgang_phrases) + ' **' + kill_id +'-You\'re an elitist nano prick**'
+            
+            #for x, y in kills.items():
+               # message_text = message_text + "**" + x + "**: " + str(y) + '\n'
+            #await message.channel.send('**ZkillID** = ' + kill_id + '\n' + message_text + reaction_text +'\n||Send isk to propeine in game||')
+            with open('pilots.txt',"a") as f:
+              print(kill_id + "\n",file=f)
+            pilots = kills.keys()
+            number = kills.values()
+            plt.bar(pilots, number, align='center', alpha=0.5,color=color)
+            plt.ylabel('Number of Kills')
+            plt.title('Involved Pilots per KM for zkillID:'+kill_id,color=color)
+            fig1=plt.gcf()
+            #plt.show()
+            fig1.savefig(fname='plot.png',transparent=True)
+            plt.clf()
+            await message.channel.send(file=discord.File('plot.png'))
+            await message.channel.send(reaction_text +'\n||Send isk to propeine in game||')
+            os.remove('plot.png')
+            
+            
+keep_alive()
+client.run(os.getenv('TOKEN'))          
